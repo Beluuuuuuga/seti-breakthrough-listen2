@@ -25,6 +25,7 @@ from functools import partial
 
 import cv2
 from PIL import Image
+import argparse
 
 import torch
 import torch.nn as nn
@@ -76,7 +77,17 @@ train["file_path"] = train["id"].apply(get_train_file_path)
 test["file_path"] = test["id"].apply(get_test_file_path)
 
 
-OUTPUT_DIR = "./"
+parser = argparse.ArgumentParser()
+parser.add_argument("--size", type=int, default=512)
+parser.add_argument("--epochs", type=int, default=20)
+parser.add_argument("--batchs", type=int, default=32)
+parser.add_argument("--fold_n", type=int, default=5)
+parser.add_argument("--model", type=str, default="efficientnet-b0")
+parser.add_argument("--output", type=str, default="v1")
+args = parser.parse_args()
+
+
+OUTPUT_DIR = "./outputs/" + args.output + "/"
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
@@ -86,10 +97,12 @@ class CFG:
     debug = False
     print_freq = 500
     num_workers = 4
-    model_name = "efficientnet-b0"
-    size = 512
+    # model_name = "efficientnet-b0"
+    model_name = args.model
+    # size = 512
+    size = args.size
     scheduler = "CosineAnnealingLR"  # ['ReduceLROnPlateau', 'CosineAnnealingLR', 'CosineAnnealingWarmRestarts']
-    epochs = 15
+    epochs = args.epochs
     # epochs=3 # change
     # factor=0.2 # ReduceLROnPlateau
     # patience=4 # ReduceLROnPlateau
@@ -99,15 +112,15 @@ class CFG:
     lr = 1e-3
     # lr=1e-5 # change
     min_lr = 5e-5
-    batch_size = 16
+    batch_size = args.batchs
     weight_decay = 1e-6
     gradient_accumulation_steps = 1
     max_grad_norm = 1000
     seed = 0
     target_size = 1
     target_col = "target"
-    n_fold = 5
-    trn_fold = [0, 1, 2, 3, 4]
+    n_fold = args.fold_n
+    trn_fold = [i for i in range(args.fold_n)]
     train = True
 
 
@@ -162,10 +175,10 @@ def get_transforms(*, data):
         return A.Compose(
             [
                 A.Resize(CFG.size, CFG.size),
-                # A.HorizontalFlip(p=0.5),
+                A.HorizontalFlip(p=0.5),
                 # A.VerticalFlip(p=0.5),
-                A.CoarseDropout(p=0.5),
-                A.Cutout(p=0.5),
+                # A.CoarseDropout(p=0.5),
+                # A.Cutout(p=0.5),
                 ToTensorV2(),
             ]
         )
