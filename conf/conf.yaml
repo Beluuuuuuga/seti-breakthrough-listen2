@@ -1,0 +1,8 @@
+model_name: efficientnet_b0
+logdir: './logs/'
+
+batch_size: 32
+num_epochs: 500
+learning_rate: 1e-3
+random_state: 42
+image_size: 512
