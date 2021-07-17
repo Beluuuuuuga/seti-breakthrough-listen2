@@ -55,7 +55,7 @@ warnings.filterwarnings("ignore")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-from seti_dataset import TrainDataset
+from seti_dataset import TrainDataset, TestDataset
 
 # from sam import SAM  # optim
 
@@ -84,6 +84,7 @@ parser.add_argument("--batchs", type=int, default=32)
 parser.add_argument("--fold_n", type=int, default=5)
 parser.add_argument("--model", type=str, default="efficientnet-b0")
 parser.add_argument("--output", type=str, default="v1")
+parser.add_argument("--train", action="store_true")
 parser.add_argument("--mixup_flag", action="store_true")
 args = parser.parse_args()
 
@@ -122,7 +123,7 @@ class CFG:
     target_col = "target"
     n_fold = args.fold_n
     trn_fold = [i for i in range(args.fold_n)]
-    train = True
+    train = args.train
     mixup_flag = args.mixup_flag
 
 
@@ -560,6 +561,25 @@ def make_oof(score_loss="loss"):
         oof_df.to_csv(OUTPUT_DIR + "oof_df.csv", index=False)
 
 
+def inference(model, states, test_loader, device):
+    model.to(device)
+    tk0 = tqdm(enumerate(test_loader), total=len(test_loader))
+    probs = []
+    for i, (images) in tk0:
+        images = images.to(device)
+        avg_preds = []
+        for state in states:
+            model.load_state_dict(state["model"])
+            model.eval()
+            with torch.no_grad():
+                y_preds = model(images)
+            avg_preds.append(y_preds.sigmoid().to("cpu").numpy())
+        avg_preds = np.mean(avg_preds, axis=0)
+        probs.append(avg_preds)
+    probs = np.concatenate(probs)
+    return probs
+
+
 def main():
 
     """
@@ -574,6 +594,7 @@ def main():
 
     if CFG.train:
         # train
+        print("Train start")
         oof_df = pd.DataFrame()
         for fold in range(CFG.n_fold):
             # if fold > 0: continue
@@ -587,6 +608,28 @@ def main():
         get_result(oof_df)
         # save result
         oof_df.to_csv(OUTPUT_DIR + "oof_df.csv", index=False)
+    else:
+        print("Inference start")
+        fold = 0
+        model = CustomModel(CFG, pretrained=False)
+        states = [
+            torch.load(OUTPUT_DIR + f"{CFG.model_name}_fold{fold}_best_loss.pth")
+            for fold in CFG.trn_fold
+        ]
+        test_dataset = TestDataset(test, transform=get_transforms(data="valid"))
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=CFG.batch_size,
+            shuffle=False,
+            num_workers=CFG.num_workers,
+            pin_memory=True,
+        )
+        predictions = inference(model, states, test_loader, device)
+        test["target"] = predictions
+        test[["id", "target"]].to_csv(
+            OUTPUT_DIR + f"{args.output}_{CFG.model_name}_submit.csv", index=False
+        )
+        test[["id", "target"]].head()
 
 
 if __name__ == "__main__":
