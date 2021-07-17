@@ -84,6 +84,7 @@ parser.add_argument("--batchs", type=int, default=32)
 parser.add_argument("--fold_n", type=int, default=5)
 parser.add_argument("--model", type=str, default="efficientnet-b0")
 parser.add_argument("--output", type=str, default="v1")
+parser.add_argument("--mixup_flag", action="store_true")
 args = parser.parse_args()
 
 
@@ -122,6 +123,11 @@ class CFG:
     n_fold = args.fold_n
     trn_fold = [i for i in range(args.fold_n)]
     train = True
+    mixup_flag = args.mixup_flag
+
+
+# print(CFG.mixup_flag)
+# exit()
 
 
 if CFG.debug:
@@ -279,22 +285,31 @@ def train_fn(train_loader, model, criterion, optimizer, epoch, scheduler, device
         # measure data loading time
         data_time.update(time.time() - end)
 
-        images, labels_a, labels_b, lam = mixup_data(
-            images, labels.view(-1, 1), alpha=1.0, use_cuda=True
-        )  # alpha can change 0.0~1.0
+        # mixupありのとき
+        if CFG.mixup_flag:
+            images, labels_a, labels_b, lam = mixup_data(
+                images, labels.view(-1, 1), alpha=1.0, use_cuda=True
+            )  # alpha can change 0.0~1.0
 
-        images = images.to(device, dtype=torch.float)
-        labels_a = labels_a.to(device, dtype=torch.float)
-        labels_b = labels_b.to(device, dtype=torch.float)
+            images = images.to(device, dtype=torch.float)
+            labels_a = labels_a.to(device, dtype=torch.float)
+            labels_b = labels_b.to(device, dtype=torch.float)
 
-        batch_size = labels.size(0)
-        if CFG.apex:
-            with autocast():
+            batch_size = labels.size(0)
+            if CFG.apex:
+                with autocast():
+                    y_preds = model(images)
+                    loss = mixup_criterion(criterion, y_preds, labels_a, labels_b, lam)
+            else:
                 y_preds = model(images)
                 loss = mixup_criterion(criterion, y_preds, labels_a, labels_b, lam)
         else:
+            images = images.to(device)
+            labels = labels.to(device)
+            batch_size = labels.size(0)
             y_preds = model(images)
-            loss = mixup_criterion(criterion, y_preds, labels_a, labels_b, lam)
+            loss = criterion(y_preds.view(-1), labels)
+
         # record loss
         losses.update(loss.item(), batch_size)
         if CFG.gradient_accumulation_steps > 1:
