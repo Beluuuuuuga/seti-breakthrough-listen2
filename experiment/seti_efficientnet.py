@@ -1,5 +1,7 @@
 import sys
 
+# python experiment/seti_efficientnet.py --size=256 --epochs=20 --output=v7 --batchs=96 --fold_n=3 --mixup_flag --train --optim=adam --gpui=0 --dir=input
+
 # sys.path.append('../../input/pytorch-image-models/')
 # sys.path.append('../../input/EfficientNet-PyTorch/')
 
@@ -22,6 +24,10 @@ from sklearn.model_selection import StratifiedKFold, GroupKFold, KFold
 
 from tqdm.auto import tqdm
 from functools import partial
+
+# from pytorchtools import EarlyStopping
+
+# from sam import SAM
 
 import cv2
 from PIL import Image
@@ -53,28 +59,10 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from seti_dataset import TrainDataset, TestDataset
 
 # from sam import SAM  # optim
-
-train = pd.read_csv("input/seti-breakthrough-listen/train_labels.csv")
-test = pd.read_csv("input/seti-breakthrough-listen/sample_submission.csv")
-
-
-def get_train_file_path(image_id):
-    return "input/seti-breakthrough-listen/train/{}/{}.npy".format(
-        image_id[0], image_id
-    )
-
-
-def get_test_file_path(image_id):
-    return "input/seti-breakthrough-listen/test/{}/{}.npy".format(image_id[0], image_id)
-
-
-train["file_path"] = train["id"].apply(get_train_file_path)
-test["file_path"] = test["id"].apply(get_test_file_path)
 
 
 parser = argparse.ArgumentParser()
@@ -84,11 +72,37 @@ parser.add_argument("--batchs", type=int, default=32)
 parser.add_argument("--fold_n", type=int, default=5)
 parser.add_argument("--model", type=str, default="efficientnet-b0")
 parser.add_argument("--output", type=str, default="v1")
+parser.add_argument("--optim", type=str, default="adam")
+parser.add_argument("--gpui", type=str, default="0")
+parser.add_argument("--dir", type=str)
 parser.add_argument("--train", action="store_true")
 parser.add_argument("--mixup_flag", action="store_true")
 args = parser.parse_args()
 
+device = torch.device(f"cuda:{args.gpui}" if torch.cuda.is_available() else "cpu")
 
+# train = pd.read_csv("input/seti-breakthrough-listen/train_labels.csv")
+# test = pd.read_csv("input/seti-breakthrough-listen/sample_submission.csv")
+train = pd.read_csv(f"{args.dir}/seti-breakthrough-listen/train_labels.csv")
+test = pd.read_csv(f"{args.dir}/seti-breakthrough-listen/sample_submission.csv")
+
+
+def get_train_file_path(image_id):
+    # return "input/seti-breakthrough-listen/train/{}/{}.npy".format(
+    return "{}/seti-breakthrough-listen/train/{}/{}.npy".format(
+        args.dir, image_id[0], image_id
+    )
+
+
+def get_test_file_path(image_id):
+    # return "input/seti-breakthrough-listen/test/{}/{}.npy".format(image_id[0], image_id)
+    return "{}/seti-breakthrough-listen/test/{}/{}.npy".format(
+        args.dir, image_id[0], image_id
+    )
+
+
+train["file_path"] = train["id"].apply(get_train_file_path)
+test["file_path"] = test["id"].apply(get_test_file_path)
 OUTPUT_DIR = "./outputs/" + args.output + "/"
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -125,6 +139,11 @@ class CFG:
     trn_fold = [i for i in range(args.fold_n)]
     train = args.train
     mixup_flag = args.mixup_flag
+    optim = args.optim
+    early_flg = False
+
+
+# EARRY_FLG = False
 
 
 # print(CFG.mixup_flag)
@@ -183,9 +202,11 @@ def get_transforms(*, data):
             [
                 A.Resize(CFG.size, CFG.size),
                 A.HorizontalFlip(p=0.5),
-                # A.VerticalFlip(p=0.5),
-                # A.CoarseDropout(p=0.5),
-                # A.Cutout(p=0.5),
+                A.VerticalFlip(p=0.5),
+                A.CoarseDropout(p=0.5),
+                # A.Rotate(limit=45, p=0.5),
+                # A.ShiftScaleRotate(p=0.5),
+                # A.GaussNoise(p=0.2),
                 ToTensorV2(),
             ]
         )
@@ -355,6 +376,7 @@ def train_fn(train_loader, model, criterion, optimizer, epoch, scheduler, device
     return losses.avg
 
 
+# def valid_fn(valid_loader, model, criterion, device, early_stopping):
 def valid_fn(valid_loader, model, criterion, device):
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -374,6 +396,10 @@ def valid_fn(valid_loader, model, criterion, device):
         with torch.no_grad():
             y_preds = model(images)
         loss = criterion(y_preds.view(-1), labels)
+
+        # early_stopping needs the validation loss to check if it has decresed,
+        # and if it has, it will make a checkpoint of the current model
+
         losses.update(loss.item(), batch_size)
         # record accuracy
         preds.append(y_preds.sigmoid().to("cpu").numpy())
@@ -396,6 +422,13 @@ def valid_fn(valid_loader, model, criterion, device):
                     remain=timeSince(start, float(step + 1) / len(valid_loader)),
                 )
             )
+
+        # early_stopping(loss)
+
+        # if early_stopping.early_stop:
+        #     print("Early stopping")
+        #     CFG.early_flg = True
+
     predictions = np.concatenate(preds)
     return losses.avg, predictions
 
@@ -466,9 +499,19 @@ def train_loop(folds, fold):
     model = CustomModel(CFG, pretrained=True)
     model.to(device)
 
-    optimizer = Adam(
-        model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay, amsgrad=False
-    )
+    if CFG.optim == "adam":
+        optimizer = Adam(
+            model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay, amsgrad=False
+        )
+    # elif CFG.optim == "sam":
+    #     base_optimizer = Adam
+    #     optimizer = SAM(
+    #         model.parameters(),
+    #         base_optimizer,
+    #         lr=CFG.lr,
+    #         weight_decay=CFG.weight_decay,
+    #     )
+
     scheduler = get_scheduler(optimizer)
 
     # ====================================================
@@ -479,7 +522,13 @@ def train_loop(folds, fold):
     best_score = 0.0
     best_loss = np.inf
 
+    # initialize the early_stopping object
+    # patience = 3
+    # early_stopping = EarlyStopping(patience=patience, verbose=True)
     for epoch in range(CFG.epochs):
+        # if CFG.early_flg:
+        #     print("Early stopping")
+        #     break
 
         start_time = time.time()
 
@@ -489,7 +538,14 @@ def train_loop(folds, fold):
         )
 
         # eval
-        avg_val_loss, preds = valid_fn(valid_loader, model, criterion, device)
+        # avg_val_loss, preds = valid_fn(valid_loader, model, criterion, device)
+        avg_val_loss, preds = valid_fn(
+            # valid_loader, model, criterion, device, early_stopping
+            valid_loader,
+            model,
+            criterion,
+            device,
+        )
 
         if isinstance(scheduler, ReduceLROnPlateau):
             scheduler.step(avg_val_loss)
