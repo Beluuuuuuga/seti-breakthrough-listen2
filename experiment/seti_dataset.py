@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 
 # sys.path = ['../input/efficientnet-pytorch/EfficientNet-PyTorch/EfficientNet-PyTorch-master',] + sys.path
 import pandas as pd
@@ -77,6 +78,38 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         file_path = self.file_names[idx]
         image = np.load(file_path)[[0, 2, 4]]  # shape: (3, 273, 256)
+        image = image.astype(np.float32)
+        image = np.vstack(image).transpose((1, 0))
+        image = self.transform(image=image)["image"]
+        label = torch.tensor(self.labels[idx]).float()
+        return image, label
+
+
+class TrainDatasetRandom(Dataset):
+    def __init__(self, df, transform=None):
+        self.df = df
+        self.file_names = df["file_path"].values
+        self.labels = df[CFG.target_col].values
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        file_path = self.file_names[idx]
+        rand_int = random.randint(0, 10)
+        if rand_int < 6:
+            image = np.load(file_path)[[0, 2, 4]]  # shape: (3, 273, 256)
+        elif rand_int == 6:
+            image = np.load(file_path)[[0, 4, 2]]  # shape: (3, 273, 256)
+        elif rand_int == 7:
+            image = np.load(file_path)[[4, 2, 0]]  # shape: (3, 273, 256)
+        elif rand_int == 8:
+            image = np.load(file_path)[[4, 0, 2]]  # shape: (3, 273, 256)
+        elif rand_int == 9:
+            image = np.load(file_path)[[2, 0, 4]]  # shape: (3, 273, 256)
+        elif rand_int == 10:
+            image = np.load(file_path)[[2, 4, 0]]  # shape: (3, 273, 256)
         image = image.astype(np.float32)
         image = np.vstack(image).transpose((1, 0))
         image = self.transform(image=image)["image"]
