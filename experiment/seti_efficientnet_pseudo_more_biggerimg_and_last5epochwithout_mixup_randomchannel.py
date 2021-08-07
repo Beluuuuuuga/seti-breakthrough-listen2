@@ -85,7 +85,7 @@ device = torch.device(f"cuda:{args.gpui}" if torch.cuda.is_available() else "cpu
 # test = pd.read_csv("input/seti-breakthrough-listen/sample_submission.csv")
 train = pd.read_csv(f"{args.dir}/seti-breakthrough-listen/train_labels.csv")
 pseudo_train = pd.read_csv(
-    "tmp_outputs/input/seti-breakthrough-listen/seti_sugawara_lb_0790_ver3_above_065_below_020.csv"  # ver3
+    "tmp_outputs/csv/seti-breakthrough-listen/seti_sugawara_lb_0790_ver3_above_065_below_020.csv"  # ver3
 )
 test = pd.read_csv(f"{args.dir}/seti-breakthrough-listen/sample_submission.csv")
 
