@@ -117,8 +117,8 @@ class CFG:
     model_name = args.model
     # size = 512
     size = args.size
-    h_size = 1024  # 273 * 3
-    w_size = 512
+    h_size = 1400  # 273 * 3
+    w_size = 700
     scheduler = "CosineAnnealingLR"  # ['ReduceLROnPlateau', 'CosineAnnealingLR', 'CosineAnnealingWarmRestarts']
     epochs = args.epochs
     # epochs=3 # change
