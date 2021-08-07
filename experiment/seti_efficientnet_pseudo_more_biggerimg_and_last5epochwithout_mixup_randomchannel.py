@@ -84,6 +84,9 @@ device = torch.device(f"cuda:{args.gpui}" if torch.cuda.is_available() else "cpu
 # train = pd.read_csv("input/seti-breakthrough-listen/train_labels.csv")
 # test = pd.read_csv("input/seti-breakthrough-listen/sample_submission.csv")
 train = pd.read_csv(f"{args.dir}/seti-breakthrough-listen/train_labels.csv")
+pseudo_train = pd.read_csv(
+    "tmp_outputs/input/seti-breakthrough-listen/seti_sugawara_lb_0790_ver3_above_065_below_020.csv"  # ver3
+)
 test = pd.read_csv(f"{args.dir}/seti-breakthrough-listen/sample_submission.csv")
 
 
@@ -193,6 +196,8 @@ seed_torch(seed=CFG.seed)
 Fold = StratifiedKFold(n_splits=CFG.n_fold, shuffle=True, random_state=CFG.seed)
 for n, (train_index, val_index) in enumerate(Fold.split(train, train[CFG.target_col])):
     train.loc[val_index, "fold"] = int(n)
+pseudo_train["fold"] = 99
+train = pd.concat([train, pseudo_train], ignore_index=True)
 train["fold"] = train["fold"].astype(int)
 print(train.groupby(["fold", "target"]).size())
 
